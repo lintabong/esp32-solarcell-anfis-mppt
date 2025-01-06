@@ -1,0 +1,73 @@
+#include <Arduino.h>
+#include "model.h"
+#include <LiquidCrystal_I2C.h>
+#include <Wire.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
+#include <Adafruit_INA219.h>
+
+// Parameter fungsi keanggotaan (mean, sigma)
+float mf_params[4][2] = {
+    {0.6, 0.1},    // current
+    {100, 10},     // rawIntensity
+    {30, 5},       // temperature
+    {1.5, 0.2}     // voltage
+};
+
+// Bobot aturan
+float rule_weights[4] = {1.0, 0.6, 0.6, 0.6};
+
+
+// Setup OneWire untuk sensor DS18B20
+#define ONE_WIRE_BUS 4  // Pin untuk data DS18B20
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature sensors(&oneWire);
+
+// Setup INA219
+Adafruit_INA219 ina219;
+
+// Pin untuk LDR
+#define LDR_PIN 34
+
+void setup() {
+    Serial.begin(115200);
+    delay(1000);  // Menunggu agar Serial Monitor siap
+
+    // Inisialisasi sensor DS18B20
+    sensors.begin();
+
+    // Inisialisasi INA219
+    if (!ina219.begin()) {
+        Serial.println("Failed to find INA219 chip");
+        while (1);
+    }
+}
+
+void loop() {
+    // Membaca suhu dari DS18B20
+    sensors.requestTemperatures(); 
+    float temperature = sensors.getTempCByIndex(0);
+
+    // Membaca nilai LDR (intensitas cahaya)
+    int rawIntensity = analogRead(LDR_PIN);
+
+    // Membaca tegangan dan arus dari INA219
+    float voltage = ina219.getBusVoltage_V();
+    float current = ina219.getCurrent_mA() / 1000.0; // Mengkonversi ke Ampere
+
+    // Menyusun data input untuk ANFIS
+    float inputs[4] = {current, rawIntensity, temperature, voltage};
+    
+    // Inferensi ANFIS
+    float pwm_output = anfis_inference(inputs, mf_params, rule_weights);
+    
+    // Menampilkan hasil PWM di Serial Monitor
+    Serial.print("Current: "); Serial.print(current); Serial.print(" A, ");
+    Serial.print("Raw Intensity: "); Serial.print(rawIntensity); Serial.print(", ");
+    Serial.print("Temperature: "); Serial.print(temperature); Serial.print(" C, ");
+    Serial.print("Voltage: "); Serial.print(voltage); Serial.print(" V, ");
+    Serial.print("Predicted PWM output: "); 
+    Serial.println(pwm_output);
+
+    delay(1000);  // Delay 1 detik sebelum pembacaan berikutnya
+}
