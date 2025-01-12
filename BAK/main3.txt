@@ -1,0 +1,98 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <OneWire.h>
+#include <SPI.h>
+#include <DallasTemperature.h>
+#include <Adafruit_INA219.h>
+
+#define LDR_PIN 4
+#define DS18B20_PIN 34
+
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+OneWire oneWire(DS18B20_PIN);
+DallasTemperature sensors(&oneWire);
+Adafruit_INA219 ina219;
+
+
+
+const int windowSize = 5; // Ukuran window untuk moving average
+float movingAverageBuffer[windowSize] = {0}; // Buffer untuk menyimpan nilai sebelumnya
+int bufferIndex = 0; // Indeks untuk buffer
+int sampleCount = 0; // Jumlah sampel yang sudah masuk ke buffer
+
+// Fungsi untuk menghitung moving average
+float calculateMovingAverage(float newValue) {
+  movingAverageBuffer[bufferIndex] = newValue; // Tambahkan nilai baru ke buffer
+  bufferIndex = (bufferIndex + 1) % windowSize; // Perbarui indeks buffer
+  if (sampleCount < windowSize) {
+    sampleCount++; // Tambahkan jumlah sampel jika belum penuh
+  }
+
+  // Hitung rata-rata
+  float sum = 0;
+  for (int i = 0; i < sampleCount; i++) {
+    sum += movingAverageBuffer[i];
+  }
+  return sum / sampleCount;
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  lcd.begin();
+  lcd.backlight();
+  lcd.print("Initializing...");
+
+  sensors.begin();
+
+  if (!ina219.begin()) {
+    Serial.println("Failed to find INA219 chip");
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("INA219 Error");
+    while (1) { delay(10); }
+  } else {
+    Serial.println("INA219 initialized");
+  }
+
+  randomSeed(analogRead(0));
+  delay(2000);
+}
+
+void loop() {
+  float ldrValue = analogRead(LDR_PIN);
+
+  sensors.requestTemperatures();
+  float temperature = sensors.getTempCByIndex(0); // Membaca suhu dari sensor pertama
+
+  int randomInt = random(2310, 2331); 
+  float randomFloat = randomInt / 100.0;
+
+  // Hitung moving average
+  float movingAverage = calculateMovingAverage(randomFloat);
+
+  float busVoltage = ina219.getBusVoltage_V();  // Tegangan pada V+
+  float current_mA = ina219.getCurrent_mA();    // Arus dalam mA
+  float power_mW = ina219.getPower_mW();        // Daya dalam mW
+
+  float result = (ldrValue / 100000) * 32;
+
+  // Menampilkan ke Serial Monitor
+  Serial.print("Raw: ");
+  Serial.print(randomFloat);
+  Serial.print(" | MA: ");
+  Serial.println(movingAverage);
+
+  // Menampilkan ke LCD
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Temp: ");
+  lcd.print(randomFloat);
+
+  lcd.setCursor(0, 1);
+  lcd.print("Avg: ");
+  lcd.print(movingAverage, 2); // 2 desimal
+
+  delay(1000);
+}
