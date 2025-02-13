@@ -13,14 +13,21 @@
 #include "tensorflow/lite/schema/schema_generated.h"
 #include "model.h"
 
+#define MA_WINDOW_SIZE 5
 #define LDR_PIN 34
 #define ONE_WIRE_BUS 4
 #define PWM_PIN 5
 #define PWM_MAX 255
 
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
 Adafruit_INA219 ina219;
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
+
+float voltage_buffer[MA_WINDOW_SIZE] = {0};
+int buffer_index = 0;
+bool buffer_filled = false;
 
 namespace {
   tflite::ErrorReporter* error_reporter = nullptr;
@@ -33,12 +40,32 @@ namespace {
   uint8_t tensor_arena[kTensorArenaSize];
 }
 
+float calculate(float new_value) {
+  voltage_buffer[buffer_index] = new_value;
+  buffer_index = (buffer_index + 1) % MA_WINDOW_SIZE;
+  
+  float sum = 0;
+  int count = buffer_filled ? MA_WINDOW_SIZE : buffer_index;
+  for (int i = 0; i < count; i++) {
+    sum += voltage_buffer[i];
+  }
+  return sum / count;
+}
+
 void setup() {
   Serial.begin(115200);
+  
+  lcd.begin();
+  lcd.backlight();
+  lcd.print("Initializing...");
+
   pinMode(PWM_PIN, OUTPUT);
 
   if (!ina219.begin()) {
     Serial.println("Gagal menginisialisasi INA219!");
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("INA219 Error");
     while (1);
   }
 
@@ -69,6 +96,7 @@ void setup() {
   output = interpreter->output(0);
 
   Serial.println("Setup selesai. TensorFlow Lite siap digunakan.");
+  lcd.clear();
 }
 
 void loop() {
@@ -78,16 +106,37 @@ void loop() {
   float temperature = sensors.getTempCByIndex(0);  // Suhu dalam derajat Celsius
   int intensity = analogRead(LDR_PIN);      // Nilai intensitas cahaya dari LDR
 
+  float voltageFinal = calculate(voltage);
+  if (buffer_index == 0) buffer_filled = true; 
+
   // Tampilkan nilai sensor untuk debugging
-  Serial.println("Nilai Sensor:");
-  Serial.print("Tegangan (V): ");
-  Serial.println(voltage);
-  Serial.print("Arus (mA): ");
-  Serial.println(current);
-  Serial.print("Suhu (°C): ");
-  Serial.println(temperature);
-  Serial.print("Intensitas Cahaya: ");
-  Serial.println(intensity);
+  // Serial.println("");
+  // Serial.println("Nilai Sensor:");
+  // Serial.print("Tegangan          : "); Serial.print(voltage); Serial.println("(V)");
+  // Serial.print("Tegangan MA       : "); Serial.print(voltageFinal); Serial.println("(V)");
+  // Serial.print("Arus              : "); Serial.print(current); Serial.println("(mA)");
+  // Serial.print("Suhu              : "); Serial.print(temperature); Serial.println("(°C)");
+  // Serial.print("Intensitas Cahaya : "); Serial.println(intensity);
+
+  Serial.print(voltage); Serial.print("\t"); Serial.println(voltageFinal);
+
+  // Tampilkan ke LCD
+  lcd.setCursor(2, 0);
+  lcd.print(voltage);
+  lcd.setCursor(2, 1);
+  lcd.print(current);
+  lcd.setCursor(10, 0);
+  lcd.print(intensity);
+  lcd.setCursor(10, 1);
+  lcd.print(temperature);
+  lcd.setCursor(0, 0);
+  lcd.print("V:");
+  lcd.setCursor(0, 1);
+  lcd.print("I:");
+  lcd.setCursor(8, 0);
+  lcd.print("L:");
+  lcd.setCursor(8, 1);
+  lcd.print("T:");
 
   // Masukkan nilai sensor ke dalam tensor input
   input->data.f[0] = current;        // Arus
@@ -101,14 +150,8 @@ void loop() {
     return;
   }
 
-  // Ambil output dan konversi ke integer
   float y_pred = output->data.f[0];
   int pwm_value = constrain(static_cast<int>(y_pred), 0, PWM_MAX);
-
-  Serial.print("Prediksi (float): ");
-  Serial.println(y_pred);
-  Serial.print("PWM (integer): ");
-  Serial.println(pwm_value);
 
   analogWrite(PWM_PIN, pwm_value);
 

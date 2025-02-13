@@ -9,6 +9,9 @@ sheet = wb.active
 # Mengambil nilai dari kolom C (baris 2-97)
 values = [sheet.cell(row=i, column=3).value for i in range(2, 98)]
 
+for val in values:
+    print(val)
+
 # Menghitung nilai rata-rata
 mean_value = np.mean(values)
 

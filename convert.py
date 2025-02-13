@@ -10,5 +10,5 @@ def convert_tflite_to_header(input_file, output_file):
                 f.write("\n")
         f.write(f"\n}};\nunsigned int {input_file.replace('.', '_')}_len = {len(data)};\n")
 
-convert_tflite_to_header("model.tflite", "model.h")
+convert_tflite_to_header("model.tflite", "model_new.h")
 
